@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest2
+import unittest
 
 
-class TestBaseHandler(unittest2.TestCase):
+class TestBaseHandler(unittest.TestCase):
 
     PROJECT = 'PROJECT'
 

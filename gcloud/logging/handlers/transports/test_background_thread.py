@@ -14,11 +14,10 @@
 
 import logging
 import time
+import unittest
 
-import unittest2
 
-
-class TestBackgroundThreadHandler(unittest2.TestCase):
+class TestBackgroundThreadHandler(unittest.TestCase):
 
     PROJECT = 'PROJECT'
 
@@ -56,7 +55,7 @@ class TestBackgroundThreadHandler(unittest2.TestCase):
                          EXPECTED_SENT)
 
 
-class TestWorker(unittest2.TestCase):
+class TestWorker(unittest.TestCase):
 
     def _getTargetClass(self):
         from gcloud.logging.handlers.transports.background_thread import (

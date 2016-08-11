@@ -13,11 +13,10 @@
 # limitations under the License.
 
 import logging
+import unittest
 
-import unittest2
 
-
-class TestCloudLoggingHandler(unittest2.TestCase):
+class TestCloudLoggingHandler(unittest.TestCase):
 
     PROJECT = 'PROJECT'
 
@@ -44,7 +43,7 @@ class TestCloudLoggingHandler(unittest2.TestCase):
         self.assertEqual(handler.transport.send_called_with, (record, MESSAGE))
 
 
-class TestSetupLogging(unittest2.TestCase):
+class TestSetupLogging(unittest.TestCase):
 
     def _callFUT(self, handler, excludes=None):
         from gcloud.logging.handlers.handlers import setup_logging

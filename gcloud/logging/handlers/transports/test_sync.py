@@ -13,11 +13,10 @@
 # limitations under the License.
 
 import logging
+import unittest
 
-import unittest2
 
-
-class TestSyncHandler(unittest2.TestCase):
+class TestSyncHandler(unittest.TestCase):
 
     PROJECT = 'PROJECT'
 

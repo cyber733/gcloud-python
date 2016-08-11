@@ -148,7 +148,7 @@ class TestLogging(unittest.TestCase):
         cloud_logger = logging.getLogger(handler.name)
         cloud_logger.addHandler(handler)
         cloud_logger.warn(LOG_MESSAGE)
-        entries, _ = _retry_backoff(_has_entries, logger.list_entries)
+        entries, _ = self._list_entries(logger)
         JSON_PAYLOAD = {
             'message': LOG_MESSAGE,
             'python_logger': handler.name
@@ -167,7 +167,7 @@ class TestLogging(unittest.TestCase):
         logger = Config.CLIENT.logger(handler.name)
         self.to_delete.append(logger)
 
-        LOGGER_NAME = "mylogger"
+        LOGGER_NAME = 'mylogger'
         cloud_logger = logging.getLogger(LOGGER_NAME)
         cloud_logger.addHandler(handler)
         cloud_logger.warn(LOG_MESSAGE)

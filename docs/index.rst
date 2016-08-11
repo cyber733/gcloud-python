@@ -117,6 +117,7 @@
   :caption: Stackdriver Error Reporting
 
   error-reporting-usage
+  Client <error-reporting-client>
 
 .. toctree::
   :maxdepth: 0

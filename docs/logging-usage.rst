@@ -454,4 +454,3 @@ The Python logging handler can use different transports. The default is
 
  1. :class:`gcloud.logging.handlers.SyncTransport` this handler does a direct API call on each
  logging statement to write the entry.
-
