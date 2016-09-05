@@ -213,7 +213,7 @@ class Logger(object):
 
         :type http_request: dict or :class:`NoneType`
         :param http_request: (optional) info about HTTP request associated with
-                             the entry
+                             the entry.
         """
         client = self._require_client(client)
         entry_resource = self._make_entry_resource(
@@ -246,7 +246,7 @@ class Logger(object):
 
         :type http_request: dict or :class:`NoneType`
         :param http_request: (optional) info about HTTP request associated with
-                             the entry
+                             the entry.
         """
         client = self._require_client(client)
         entry_resource = self._make_entry_resource(
@@ -414,7 +414,7 @@ class Batch(object):
             client = self.client
 
         kwargs = {
-            'logger_name': self.logger.path,
+            'logger_name': self.logger.full_name,
             'resource': {'type': 'global'},
         }
         if self.logger.labels is not None:

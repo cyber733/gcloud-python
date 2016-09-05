@@ -63,40 +63,39 @@ class Config(object):
     INSTANCE = None
 
 
-def _operation_wait(operation, max_attempts=5):
+def _wait_until_complete(operation, max_attempts=5):
     """Wait until an operation has completed.
 
     :type operation: :class:`gcloud.bigtable.instance.Operation`
-    :param operation: Operation that has not finished.
+    :param operation: Operation that has not complete.
 
     :type max_attempts: int
     :param max_attempts: (Optional) The maximum number of times to check if
-                         the operation has finished. Defaults to 5.
+                         the operation has complete. Defaults to 5.
 
     :rtype: bool
-    :returns: Boolean indicating if the operation finished.
+    :returns: Boolean indicating if the operation is complete.
     """
 
-    def _operation_finished(result):
+    def _operation_complete(result):
         return result
 
-    retry = RetryResult(_operation_finished, max_tries=max_attempts)
-    return retry(operation.finished)()
+    retry = RetryResult(_operation_complete, max_tries=max_attempts)
+    return retry(operation.poll)()
 
 
 def _retry_on_unavailable(exc):
-    """Retry only AbortionErrors whose status code is 'UNAVAILABLE'."""
-    from grpc.beta.interfaces import StatusCode
-    return exc.code == StatusCode.UNAVAILABLE
+    """Retry only errors whose status code is 'UNAVAILABLE'."""
+    from grpc import StatusCode
+    return exc.code() == StatusCode.UNAVAILABLE
 
 
 def setUpModule():
-    from grpc.framework.interfaces.face.face import AbortionError
+    from grpc._channel import _Rendezvous
     _helpers.PROJECT = TESTS_PROJECT
     Config.CLIENT = Client(admin=True)
     Config.INSTANCE = Config.CLIENT.instance(INSTANCE_ID, LOCATION_ID)
-    Config.CLIENT.start()
-    retry = RetryErrors(AbortionError, error_predicate=_retry_on_unavailable)
+    retry = RetryErrors(_Rendezvous, error_predicate=_retry_on_unavailable)
     instances, failed_locations = retry(Config.CLIENT.list_instances)()
 
     if len(failed_locations) != 0:
@@ -106,13 +105,12 @@ def setUpModule():
 
     # After listing, create the test instance.
     created_op = Config.INSTANCE.create()
-    if not _operation_wait(created_op):
+    if not _wait_until_complete(created_op):
         raise RuntimeError('Instance creation exceed 5 seconds.')
 
 
 def tearDownModule():
     Config.INSTANCE.delete()
-    Config.CLIENT.stop()
 
 
 class TestInstanceAdminAPI(unittest.TestCase):
@@ -152,7 +150,7 @@ class TestInstanceAdminAPI(unittest.TestCase):
         self.instances_to_delete.append(instance)
 
         # We want to make sure the operation completes.
-        self.assertTrue(_operation_wait(operation))
+        self.assertTrue(_wait_until_complete(operation))
 
         # Create a new instance instance and make sure it is the same.
         instance_alt = Config.CLIENT.instance(ALT_INSTANCE_ID, LOCATION_ID)

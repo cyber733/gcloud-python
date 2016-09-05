@@ -1,12 +1,6 @@
 Base for Everything
 ===================
 
-.. warning::
-
-    gRPC is required for using the Cloud Bigtable API. As of May 2016,
-    ``grpcio`` is only supported in Python 2.7, so importing
-    :mod:`gcloud.bigtable` in other versions of Python will fail.
-
 To use the API, the :class:`Client <gcloud.bigtable.client.Client>`
 class defines a high-level interface which handles authorization
 and creating other objects:
@@ -20,11 +14,9 @@ Long-lived Defaults
 -------------------
 
 When creating a :class:`Client <gcloud.bigtable.client.Client>`, the
-``user_agent`` and ``timeout_seconds`` arguments have sensible
-defaults
-(:data:`DEFAULT_USER_AGENT <gcloud.bigtable.client.DEFAULT_USER_AGENT>` and
-:data:`DEFAULT_TIMEOUT_SECONDS <gcloud.bigtable.client.DEFAULT_TIMEOUT_SECONDS>`).
-However, you may over-ride them and these will be used throughout all API
+``user_agent`` argument has sensible a default
+(:data:`DEFAULT_USER_AGENT <gcloud.bigtable.client.DEFAULT_USER_AGENT>`).
+However, you may over-ride it and the value will be used throughout all API
 requests made with the ``client`` you create.
 
 Configuration

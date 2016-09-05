@@ -580,11 +580,9 @@ def package_files(generated_json_dir, docs_build_dir, static_json_dir,
             - master/
                 - toc.json
                 - types.json
-                - home.html
                 - index.json
                 - overview.html
             - home.html
-        - home.html
         - index.html
         - manifest.json
     """
@@ -623,13 +621,16 @@ def main():
             'error_reporting': [],
             'exceptions': [],
             'iterator': [],
+            'language': [],
             'logging': [],
             'monitoring': [],
+            'operation': [],
             'pubsub': [],
             'resource_manager': [],
             'storage': [],
             'streaming': [],
-            'translate': []
+            'translate': [],
+            'vision': [],
         }
     }
 

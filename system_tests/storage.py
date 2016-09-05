@@ -28,8 +28,10 @@ from gcloud.storage._helpers import _base64_md5hash
 
 from system_test_utils import unique_resource_id
 from retry import RetryErrors
+from retry import RetryResult
 
 
+retry_429 = RetryErrors(exceptions.TooManyRequests)
 HTTP = httplib2.Http()
 _helpers.PROJECT = TESTS_PROJECT
 
@@ -49,7 +51,8 @@ def setUpModule():
     bucket_name = 'new' + unique_resource_id()
     # In the **very** rare case the bucket name is reserved, this
     # fails with a ConnectionError.
-    Config.TEST_BUCKET = Config.CLIENT.create_bucket(bucket_name)
+    Config.TEST_BUCKET = Config.CLIENT.bucket(bucket_name)
+    retry_429(Config.TEST_BUCKET.create)()
 
 
 def tearDownModule():
@@ -65,7 +68,8 @@ class TestStorageBuckets(unittest.TestCase):
     def tearDown(self):
         with Config.CLIENT.batch():
             for bucket_name in self.case_buckets_to_delete:
-                Config.CLIENT.bucket(bucket_name).delete()
+                bucket = Config.CLIENT.bucket(bucket_name)
+                retry_429(bucket.delete)()
 
     def test_create_bucket(self):
         new_bucket_name = 'a-new-bucket' + unique_resource_id('-')
@@ -83,7 +87,8 @@ class TestStorageBuckets(unittest.TestCase):
         ]
         created_buckets = []
         for bucket_name in buckets_to_create:
-            bucket = Config.CLIENT.create_bucket(bucket_name)
+            bucket = Config.CLIENT.bucket(bucket_name)
+            retry_429(bucket.create)()
             self.case_buckets_to_delete.append(bucket_name)
 
         # Retrieve the buckets.
@@ -221,8 +226,16 @@ class TestStorageListFiles(TestStorageFiles):
             blob.delete()
 
     def test_list_files(self):
-        all_blobs = list(self.bucket.list_blobs())
-        self.assertEqual(len(all_blobs), len(self.FILENAMES))
+        def _all_in_list(blobs):
+            return len(blobs) == len(self.FILENAMES)
+
+        def _all_blobs():
+            return list(self.bucket.list_blobs())
+
+        retry = RetryResult(_all_in_list)
+        all_blobs = retry(_all_blobs)()
+        self.assertEqual(sorted(blob.name for blob in all_blobs),
+                         sorted(self.FILENAMES))
 
     def test_paginate_files(self):
         truncation_size = 1

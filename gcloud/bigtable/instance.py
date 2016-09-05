@@ -17,9 +17,6 @@
 
 import re
 
-from google.longrunning import operations_pb2
-
-from gcloud._helpers import _pb_timestamp_to_datetime
 from gcloud.bigtable._generated import (
     instance_pb2 as data_v2_pb2)
 from gcloud.bigtable._generated import (
@@ -29,21 +26,20 @@ from gcloud.bigtable._generated import (
 from gcloud.bigtable.cluster import Cluster
 from gcloud.bigtable.cluster import DEFAULT_SERVE_NODES
 from gcloud.bigtable.table import Table
+from gcloud.operation import Operation
+from gcloud.operation import _compute_type_url
+from gcloud.operation import _register_type_url
 
 
 _EXISTING_INSTANCE_LOCATION_ID = 'see-existing-cluster'
 _INSTANCE_NAME_RE = re.compile(r'^projects/(?P<project>[^/]+)/'
                                r'instances/(?P<instance_id>[a-z][-a-z0-9]*)$')
-_OPERATION_NAME_RE = re.compile(r'^operations/projects/([^/]+)/'
-                                r'instances/([a-z][-a-z0-9]*)/'
-                                r'locations/(?P<location_id>[a-z][-a-z0-9]*)/'
-                                r'operations/(?P<operation_id>\d+)$')
-_TYPE_URL_BASE = 'type.googleapis.com/google.bigtable.'
-_ADMIN_TYPE_URL_BASE = _TYPE_URL_BASE + 'admin.v2.'
-_INSTANCE_CREATE_METADATA = _ADMIN_TYPE_URL_BASE + 'CreateInstanceMetadata'
-_TYPE_URL_MAP = {
-    _INSTANCE_CREATE_METADATA: messages_v2_pb2.CreateInstanceMetadata,
-}
+
+
+_CREATE_INSTANCE_METADATA_URL = _compute_type_url(
+    messages_v2_pb2.CreateInstanceMetadata)
+_register_type_url(
+    _CREATE_INSTANCE_METADATA_URL, messages_v2_pb2.CreateInstanceMetadata)
 
 
 def _prepare_create_request(instance):
@@ -71,125 +67,6 @@ def _prepare_create_request(instance):
     return message
 
 
-def _parse_pb_any_to_native(any_val, expected_type=None):
-    """Convert a serialized "google.protobuf.Any" value to actual type.
-
-    :type any_val: :class:`google.protobuf.any_pb2.Any`
-    :param any_val: A serialized protobuf value container.
-
-    :type expected_type: str
-    :param expected_type: (Optional) The type URL we expect ``any_val``
-                          to have.
-
-    :rtype: object
-    :returns: The de-serialized object.
-    :raises: :class:`ValueError <exceptions.ValueError>` if the
-             ``expected_type`` does not match the ``type_url`` on the input.
-    """
-    if expected_type is not None and expected_type != any_val.type_url:
-        raise ValueError('Expected type: %s, Received: %s' % (
-            expected_type, any_val.type_url))
-    container_class = _TYPE_URL_MAP[any_val.type_url]
-    return container_class.FromString(any_val.value)
-
-
-def _process_operation(operation_pb):
-    """Processes a create protobuf response.
-
-    :type operation_pb: :class:`google.longrunning.operations_pb2.Operation`
-    :param operation_pb: The long-running operation response from a
-                         Create/Update/Undelete instance request.
-
-    :rtype: (int, str, datetime)
-    :returns: (operation_id, location_id, operation_begin).
-    :raises: :class:`ValueError <exceptions.ValueError>` if the operation name
-             doesn't match the :data:`_OPERATION_NAME_RE` regex.
-    """
-    match = _OPERATION_NAME_RE.match(operation_pb.name)
-    if match is None:
-        raise ValueError('Operation name was not in the expected '
-                         'format after instance creation.',
-                         operation_pb.name)
-    location_id = match.group('location_id')
-    operation_id = int(match.group('operation_id'))
-
-    request_metadata = _parse_pb_any_to_native(operation_pb.metadata)
-    operation_begin = _pb_timestamp_to_datetime(
-        request_metadata.request_time)
-
-    return operation_id, location_id, operation_begin
-
-
-class Operation(object):
-    """Representation of a Google API Long-Running Operation.
-
-    In particular, these will be the result of operations on
-    instances using the Cloud Bigtable API.
-
-    :type op_type: str
-    :param op_type: The type of operation being performed. Expect
-                    ``create``, ``update`` or ``undelete``.
-
-    :type op_id: int
-    :param op_id: The ID of the operation.
-
-    :type begin: :class:`datetime.datetime`
-    :param begin: The time when the operation was started.
-
-    :type location_id: str
-    :param location_id: ID of the location in which the operation is running
-
-    :type instance: :class:`Instance`
-    :param instance: The instance that created the operation.
-    """
-
-    def __init__(self, op_type, op_id, begin, location_id, instance=None):
-        self.op_type = op_type
-        self.op_id = op_id
-        self.begin = begin
-        self.location_id = location_id
-        self._instance = instance
-        self._complete = False
-
-    def __eq__(self, other):
-        if not isinstance(other, self.__class__):
-            return False
-        return (other.op_type == self.op_type and
-                other.op_id == self.op_id and
-                other.begin == self.begin and
-                other.location_id == self.location_id and
-                other._instance == self._instance and
-                other._complete == self._complete)
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def finished(self):
-        """Check if the operation has finished.
-
-        :rtype: bool
-        :returns: A boolean indicating if the current operation has completed.
-        :raises: :class:`ValueError <exceptions.ValueError>` if the operation
-                 has already completed.
-        """
-        if self._complete:
-            raise ValueError('The operation has completed.')
-
-        operation_name = (
-            'operations/%s/locations/%s/operations/%d' %
-            (self._instance.name, self.location_id, self.op_id))
-        request_pb = operations_pb2.GetOperationRequest(name=operation_name)
-        # We expect a `google.longrunning.operations_pb2.Operation`.
-        operation_pb = self._instance._client._operations_stub.GetOperation(
-            request_pb, self._instance._client.timeout_seconds)
-
-        if operation_pb.done:
-            self._complete = True
-            return True
-        else:
-            return False
-
-
 class Instance(object):
     """Representation of a Google Cloud Bigtable Instance.
 
@@ -199,7 +76,6 @@ class Instance(object):
     * :meth:`create` itself
     * :meth:`update` itself
     * :meth:`delete` itself
-    * :meth:`undelete` itself
 
     .. note::
 
@@ -329,8 +205,7 @@ class Instance(object):
         """Reload the metadata for this instance."""
         request_pb = messages_v2_pb2.GetInstanceRequest(name=self.name)
         # We expect `data_v2_pb2.Instance`.
-        instance_pb = self._client._instance_stub.GetInstance(
-            request_pb, self._client.timeout_seconds)
+        instance_pb = self._client._instance_stub.GetInstance(request_pb)
 
         # NOTE: _update_from_pb does not check that the project and
         #       instance ID on the response match the request.
@@ -358,11 +233,12 @@ class Instance(object):
         """
         request_pb = _prepare_create_request(self)
         # We expect a `google.longrunning.operations_pb2.Operation`.
-        operation_pb = self._client._instance_stub.CreateInstance(
-            request_pb, self._client.timeout_seconds)
+        operation_pb = self._client._instance_stub.CreateInstance(request_pb)
 
-        op_id, loc_id, op_begin = _process_operation(operation_pb)
-        return Operation('create', op_id, op_begin, loc_id, instance=self)
+        operation = Operation.from_pb(operation_pb, self._client)
+        operation.target = self
+        operation.metadata['request_type'] = 'CreateInstance'
+        return operation
 
     def update(self):
         """Update this instance.
@@ -383,8 +259,7 @@ class Instance(object):
             display_name=self.display_name,
         )
         # Ignore the expected `data_v2_pb2.Instance`.
-        self._client._instance_stub.UpdateInstance(
-            request_pb, self._client.timeout_seconds)
+        self._client._instance_stub.UpdateInstance(request_pb)
 
     def delete(self):
         """Delete this instance.
@@ -402,11 +277,6 @@ class Instance(object):
 
         * All tables within the instance will become unavailable.
 
-        Prior to the instance's ``delete_time``:
-
-        * The instance can be recovered with a call to ``UndeleteInstance``.
-        * All other attempts to modify or delete the instance will be rejected.
-
         At the instance's ``delete_time``:
 
         * The instance and **all of its tables** will immediately and
@@ -415,8 +285,7 @@ class Instance(object):
         """
         request_pb = messages_v2_pb2.DeleteInstanceRequest(name=self.name)
         # We expect a `google.protobuf.empty_pb2.Empty`
-        self._client._instance_stub.DeleteInstance(
-            request_pb, self._client.timeout_seconds)
+        self._client._instance_stub.DeleteInstance(request_pb)
 
     def cluster(self, cluster_id, serve_nodes=3):
         """Factory to create a cluster associated with this client.
@@ -444,7 +313,7 @@ class Instance(object):
         request_pb = messages_v2_pb2.ListClustersRequest(parent=self.name)
         # We expect a `.cluster_messages_v1_pb2.ListClustersResponse`
         list_clusters_response = self._client._instance_stub.ListClusters(
-            request_pb, self._client.timeout_seconds)
+            request_pb)
 
         failed_locations = [
             location for location in list_clusters_response.failed_locations]
@@ -473,8 +342,7 @@ class Instance(object):
         """
         request_pb = table_messages_v2_pb2.ListTablesRequest(parent=self.name)
         # We expect a `table_messages_v2_pb2.ListTablesResponse`
-        table_list_pb = self._client._table_stub.ListTables(
-            request_pb, self._client.timeout_seconds)
+        table_list_pb = self._client._table_stub.ListTables(request_pb)
 
         result = []
         for table_pb in table_list_pb.tables:

@@ -30,9 +30,13 @@ try:
 except ImportError:
     app_identity = None
 try:
-    from grpc.beta import implementations
+    from google.gax.grpc import exc_to_code as beta_exc_to_code
+    import grpc
+    from grpc._channel import _Rendezvous
 except ImportError:  # pragma: NO COVER
-    implementations = None
+    beta_exc_to_code = None
+    grpc = None
+    _Rendezvous = Exception
 import six
 from six.moves.http_client import HTTPConnection
 from six.moves import configparser
@@ -53,7 +57,16 @@ _RFC3339_NANOS = re.compile(r"""
     (?P<nanos>\d{1,9})                       # nanoseconds, maybe truncated
     Z                                        # Zulu
 """, re.VERBOSE)
-DEFAULT_CONFIGURATION_PATH = '~/.config/gcloud/configurations/config_default'
+# NOTE: Catching this ImportError is a workaround for GAE not supporting the
+#       "pwd" module which is imported lazily when "expanduser" is called.
+try:
+    _USER_ROOT = os.path.expanduser('~')
+except ImportError:  # pragma: NO COVER
+    _USER_ROOT = None
+_GCLOUD_CONFIG_FILE = os.path.join(
+    'gcloud', 'configurations', 'config_default')
+_GCLOUD_CONFIG_SECTION = 'core'
+_GCLOUD_CONFIG_KEY = 'project'
 
 
 class _LocalStack(Local):
@@ -167,10 +180,10 @@ def _app_engine_id():
 
 
 def _file_project_id():
-    """Gets the project id from the credentials file if one is available.
+    """Gets the project ID from the credentials file if one is available.
 
     :rtype: str or ``NoneType``
-    :returns: Project-ID from JSON credentials file if value exists,
+    :returns: Project ID from JSON credentials file if value exists,
               else ``None``.
     """
     credentials_file_path = os.getenv(CREDENTIALS)
@@ -181,8 +194,36 @@ def _file_project_id():
             return credentials.get('project_id')
 
 
+def _get_nix_config_path():
+    """Get the ``gcloud`` CLI config path on *nix systems.
+
+    :rtype: str
+    :returns: The filename on a *nix system containing the CLI
+              config file.
+    """
+    return os.path.join(_USER_ROOT, '.config', _GCLOUD_CONFIG_FILE)
+
+
+def _get_windows_config_path():
+    """Get the ``gcloud`` CLI config path on Windows systems.
+
+    :rtype: str
+    :returns: The filename on a Windows system containing the CLI
+              config file.
+    """
+    appdata_dir = os.getenv('APPDATA', '')
+    return os.path.join(appdata_dir, _GCLOUD_CONFIG_FILE)
+
+
 def _default_service_project_id():
     """Retrieves the project ID from the gcloud command line tool.
+
+    This assumes the ``.config`` directory is stored
+    - in ~/.config on *nix systems
+    - in the %APPDATA% directory on Windows systems
+
+    Additionally, the ${HOME} / "~" directory may not be present on Google
+    App Engine, so this may be conditionally ignored.
 
     Files that cannot be opened with configparser are silently ignored; this is
     designed so that you can specify a list of potential configuration file
@@ -192,21 +233,17 @@ def _default_service_project_id():
     :returns: Project-ID from default configuration file else ``None``
     """
     search_paths = []
-    # Workaround for GAE not supporting pwd which is used by expanduser.
-    try:
-        search_paths.append(os.path.expanduser(DEFAULT_CONFIGURATION_PATH))
-    except ImportError:
-        pass
+    if _USER_ROOT is not None:
+        search_paths.append(_get_nix_config_path())
 
-    windows_config_path = os.path.join(os.getenv('APPDATA', ''),
-                                       'gcloud', 'configurations',
-                                       'config_default')
-    search_paths.append(windows_config_path)
+    if os.name == 'nt':
+        search_paths.append(_get_windows_config_path())
+
     config = configparser.RawConfigParser()
     config.read(search_paths)
 
-    if config.has_section('core'):
-        return config.get('core', 'project')
+    if config.has_section(_GCLOUD_CONFIG_SECTION):
+        return config.get(_GCLOUD_CONFIG_SECTION, _GCLOUD_CONFIG_KEY)
 
 
 def _compute_engine_id():
@@ -566,16 +603,16 @@ class MetadataPlugin(object):
         """
         access_token = self._credentials.get_access_token().access_token
         headers = [
-            ('Authorization', 'Bearer ' + access_token),
-            ('User-agent', self._user_agent),
+            ('authorization', 'Bearer ' + access_token),
+            ('user-agent', self._user_agent),
         ]
         callback(headers, None)
 
 
-def make_stub(credentials, user_agent, stub_factory, host, port):
+def make_stub(credentials, user_agent, stub_class, host, port):
     """Makes a stub for an RPC service.
 
-    Uses / depends on the beta implementation of gRPC.
+    Uses / depends on gRPC.
 
     :type credentials: :class:`oauth2client.client.OAuth2Credentials`
     :param credentials: The OAuth2 Credentials to use for creating
@@ -584,9 +621,8 @@ def make_stub(credentials, user_agent, stub_factory, host, port):
     :type user_agent: str
     :param user_agent: (Optional) The user agent to be used with API requests.
 
-    :type stub_factory: callable
-    :param stub_factory: A factory which will create a gRPC stub for
-                         a given service.
+    :type stub_class: type
+    :param stub_class: A gRPC stub type for a given service.
 
     :type host: str
     :param host: The host for the service.
@@ -594,19 +630,35 @@ def make_stub(credentials, user_agent, stub_factory, host, port):
     :type port: int
     :param port: The port for the service.
 
-    :rtype: :class:`grpc.beta._stub._AutoIntermediary`
+    :rtype: object, instance of ``stub_class``
     :returns: The stub object used to make gRPC requests to a given API.
     """
     # Leaving the first argument to ssl_channel_credentials() as None
     # loads root certificates from `grpc/_adapter/credentials/roots.pem`.
-    transport_creds = implementations.ssl_channel_credentials(None, None, None)
+    transport_creds = grpc.ssl_channel_credentials()
     custom_metadata_plugin = MetadataPlugin(credentials, user_agent)
-    auth_creds = implementations.metadata_call_credentials(
+    auth_creds = grpc.metadata_call_credentials(
         custom_metadata_plugin, name='google_creds')
-    channel_creds = implementations.composite_channel_credentials(
+    channel_creds = grpc.composite_channel_credentials(
         transport_creds, auth_creds)
-    channel = implementations.secure_channel(host, port, channel_creds)
-    return stub_factory(channel)
+    target = '%s:%d' % (host, port)
+    channel = grpc.secure_channel(target, channel_creds)
+    return stub_class(channel)
+
+
+def exc_to_code(exc):
+    """Retrieves the status code from a gRPC exception.
+
+    :type exc: :class:`Exception`
+    :param exc: An exception from gRPC beta or stable.
+
+    :rtype: :class:`grpc.StatusCode`
+    :returns: The status code attached to the exception.
+    """
+    if isinstance(exc, _Rendezvous):
+        return exc.code()
+    else:
+        return beta_exc_to_code(exc)
 
 
 try:

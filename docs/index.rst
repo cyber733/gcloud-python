@@ -6,6 +6,7 @@
   gcloud-api
   gcloud-config
   gcloud-auth
+  operation-api
 
 .. toctree::
   :maxdepth: 0
@@ -106,6 +107,10 @@
   logging-entries
   logging-metric
   logging-sink
+  logging-handlers
+  logging-transports-sync
+  logging-transports-thread
+  logging-transports-base
 
 .. toctree::
   :maxdepth: 0
@@ -136,6 +141,26 @@
 
   translate-usage
   Client <translate-client>
+
+.. toctree::
+  :maxdepth: 0
+  :hidden:
+  :caption: Vision
+
+  vision-usage
+  vision-client
+  vision-image
+  vision-feature
+
+.. toctree::
+  :maxdepth: 0
+  :hidden:
+  :caption: Natural Language
+
+  language-usage
+  Client <language-client>
+  language-document
+  language-responses
 
 .. toctree::
   :maxdepth: 0

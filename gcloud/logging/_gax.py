@@ -19,18 +19,18 @@ import json
 from google.gax import CallOptions
 from google.gax import INITIAL_PAGE
 from google.gax.errors import GaxError
-from google.gax.grpc import exc_to_code
 from google.logging.type.log_severity_pb2 import LogSeverity
 from google.logging.v2.logging_config_pb2 import LogSink
 from google.logging.v2.logging_metrics_pb2 import LogMetric
 from google.logging.v2.log_entry_pb2 import LogEntry
 from google.protobuf.json_format import Parse
-from grpc.beta.interfaces import StatusCode
+from grpc import StatusCode
 
-from gcloud.exceptions import Conflict
-from gcloud.exceptions import NotFound
 from gcloud._helpers import _datetime_to_pb_timestamp
 from gcloud._helpers import _pb_timestamp_to_rfc3339
+from gcloud._helpers import exc_to_code
+from gcloud.exceptions import Conflict
+from gcloud.exceptions import NotFound
 
 
 class _LoggingAPI(object):
@@ -44,7 +44,7 @@ class _LoggingAPI(object):
         self._gax_api = gax_api
 
     def list_entries(self, projects, filter_='', order_by='',
-                     page_size=0, page_token=INITIAL_PAGE):
+                     page_size=0, page_token=None):
         """Return a page of log entry resources.
 
         :type projects: list of strings
@@ -73,6 +73,8 @@ class _LoggingAPI(object):
                   if not None, indicates that more entries can be retrieved
                   with another call (pass that value as ``page_token``).
         """
+        if page_token is None:
+            page_token = INITIAL_PAGE
         options = CallOptions(page_token=page_token)
         page_iter = self._gax_api.list_log_entries(
             projects, filter_, order_by, page_size, options)
@@ -135,7 +137,7 @@ class _SinksAPI(object):
     def __init__(self, gax_api):
         self._gax_api = gax_api
 
-    def list_sinks(self, project, page_size=0, page_token=INITIAL_PAGE):
+    def list_sinks(self, project, page_size=0, page_token=None):
         """List sinks for the project associated with this client.
 
         :type project: string
@@ -155,6 +157,8 @@ class _SinksAPI(object):
                   if not None, indicates that more sinks can be retrieved
                   with another call (pass that value as ``page_token``).
         """
+        if page_token is None:
+            page_token = INITIAL_PAGE
         options = CallOptions(page_token=page_token)
         path = 'projects/%s' % (project,)
         page_iter = self._gax_api.list_sinks(path, page_size, options)
@@ -279,7 +283,7 @@ class _MetricsAPI(object):
     def __init__(self, gax_api):
         self._gax_api = gax_api
 
-    def list_metrics(self, project, page_size=0, page_token=INITIAL_PAGE):
+    def list_metrics(self, project, page_size=0, page_token=None):
         """List metrics for the project associated with this client.
 
         :type project: string
@@ -299,6 +303,8 @@ class _MetricsAPI(object):
                   if not None, indicates that more metrics can be retrieved
                   with another call (pass that value as ``page_token``).
         """
+        if page_token is None:
+            page_token = INITIAL_PAGE
         options = CallOptions(page_token=page_token)
         path = 'projects/%s' % (project,)
         page_iter = self._gax_api.list_log_metrics(path, page_size, options)
